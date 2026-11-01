@@ -1,0 +1,14 @@
+{
+  "name": "ruleta-qr",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Ruleta en vivo: los participantes se anotan escaneando un código QR",
+  "scripts": {
+    "dev": "netlify dev",
+    "test": "node test/api.test.mjs"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}

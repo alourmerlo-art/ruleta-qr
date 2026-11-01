@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ruleta en vivo</title>
+<meta name="theme-color" content="#0f1226">
+<style>
+  :root {
+    --fondo: #0f1226;
+    --fondo-2: #181c3a;
+    --panel: #1d2245;
+    --borde: #2e3566;
+    --texto: #f4f5ff;
+    --suave: #a9aed6;
+    --oro: #ffd166;
+    --coral: #ef476f;
+    --verde: #06d6a0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    color: var(--texto);
+    background:
+      radial-gradient(1200px 700px at 20% -10%, #2a2f6b 0%, transparent 60%),
+      radial-gradient(900px 600px at 110% 110%, #4a1d5c 0%, transparent 55%),
+      var(--fondo);
+    background-attachment: fixed;
+  }
+  button { font: inherit; cursor: pointer; }
+  .app {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 24px;
+    padding: 20px 24px 28px;
+    max-width: 1500px;
+    margin: 0 auto;
+    align-items: start;
+  }
+  header.top {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  h1 { margin: 0; font-size: clamp(1.3rem, 2.4vw, 1.9rem); letter-spacing: .02em; }
+  h1 span { color: var(--oro); }
+  .barra { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn {
+    background: var(--panel); color: var(--texto);
+    border: 1px solid var(--borde); border-radius: 10px;
+    padding: 9px 14px; font-size: .92rem; font-weight: 600;
+    transition: transform .08s ease, background .15s ease, border-color .15s;
+  }
+  .btn:hover { background: #262c5a; border-color: #4a539c; }
+  .btn:active { transform: translateY(1px); }
+  .btn.peligro:hover { border-color: var(--coral); color: #ffd3dd; }
+  .btn.activo { border-color: var(--verde); color: var(--verde); }
+
+  /* ----- Ruleta ----- */
+  .escenario { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .ruleta-caja {
+    position: relative; width: min(100%, calc(100vh - 170px), 820px); aspect-ratio: 1;
+    min-width: 280px;
+  }
+  .ruleta-caja canvas { width: 100%; height: 100%; display: block; }
+  .puntero {
+    position: absolute; left: 50%; top: -6px; transform: translateX(-50%);
+    width: 0; height: 0; z-index: 3;
+    border-left: 20px solid transparent; border-right: 20px solid transparent;
+    border-top: 44px solid var(--oro);
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,.55));
+  }
+  .btn-girar {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 21%; aspect-ratio: 1; border-radius: 50%; z-index: 2;
+    border: 5px solid var(--oro);
+    background: radial-gradient(circle at 35% 30%, #ff6b8b, var(--coral) 60%, #b81f48);
+    color: #fff; font-weight: 800; font-size: clamp(.8rem, 2.2vw, 1.5rem);
+    letter-spacing: .06em; text-shadow: 0 2px 4px rgba(0,0,0,.4);
+    box-shadow: 0 8px 24px rgba(0,0,0,.5), inset 0 -6px 12px rgba(0,0,0,.25);
+    transition: transform .12s ease, filter .2s;
+  }
+  .btn-girar:hover:not(:disabled) { transform: translate(-50%, -50%) scale(1.06); }
+  .btn-girar:disabled { filter: grayscale(.85) brightness(.7); cursor: not-allowed; }
+  .estado { color: var(--suave); min-height: 1.4em; text-align: center; }
+  .opciones { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; color: var(--suave); font-size: .95rem; }
+  .opciones label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .opciones input { width: 18px; height: 18px; accent-color: var(--oro); }
+
+  /* ----- Panel lateral ----- */
+  aside { display: flex; flex-direction: column; gap: 16px; }
+  .tarjeta {
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+    border: 1px solid var(--borde); border-radius: 18px; padding: 18px;
+  }
+  .tarjeta h2 { margin: 0 0 10px; font-size: 1rem; color: var(--suave); text-transform: uppercase; letter-spacing: .12em; }
+  .qr-caja { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .qr-marco { background: #fff; padding: 12px; border-radius: 14px; line-height: 0; }
+  .qr-marco img, .qr-marco canvas { width: 100% !important; height: auto !important; max-width: 260px; }
+  #qr { width: 260px; max-width: 100%; }
+  #qr svg { width: 100%; height: auto; display: block; }
+  .codigo { font-size: 2.1rem; font-weight: 800; letter-spacing: .28em; color: var(--oro); padding-left: .28em; }
+  .enlace { font-size: .8rem; color: var(--suave); word-break: break-all; text-align: center; }
+  .contador { display: flex; align-items: baseline; justify-content: space-between; }
+  .contador strong { font-size: 2.2rem; color: var(--verde); line-height: 1; }
+  .lista { list-style: none; margin: 10px 0 0; padding: 0; max-height: 280px; overflow: auto; display: grid; gap: 6px; }
+  .lista li {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    background: var(--fondo-2); border: 1px solid var(--borde); border-radius: 10px;
+    padding: 7px 10px;
+  }
+  .lista li.nuevo { animation: entra .35s ease; }
+  .lista li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lista .x { background: none; border: 0; color: var(--suave); font-size: 1.15rem; line-height: 1; padding: 2px 6px; border-radius: 6px; }
+  .lista .x:hover { color: #fff; background: var(--coral); }
+  .vacio { color: var(--suave); text-align: center; padding: 14px 0 4px; font-size: .95rem; }
+  .historial { margin: 8px 0 0; padding-left: 20px; color: var(--texto); }
+  .historial li { margin: 3px 0; }
+  .fila-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  @keyframes entra { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+  /* ----- Ganador ----- */
+  .velo {
+    position: fixed; inset: 0; z-index: 20; display: none;
+    background: rgba(8, 10, 28, .78); backdrop-filter: blur(4px);
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  .velo.abierto { display: flex; }
+  .ganador {
+    position: relative; z-index: 22; text-align: center;
+    background: linear-gradient(160deg, #2a3070, #3b1f5e);
+    border: 2px solid var(--oro); border-radius: 26px;
+    padding: 34px clamp(24px, 6vw, 64px); max-width: 92vw;
+    box-shadow: 0 30px 80px rgba(0,0,0,.6);
+    animation: aparece .5s cubic-bezier(.2, 1.4, .4, 1);
+  }
+  .ganador small { color: var(--oro); letter-spacing: .3em; text-transform: uppercase; font-weight: 700; }
+  .ganador .nombre { font-size: clamp(2rem, 8vw, 4.6rem); font-weight: 900; margin: 12px 0 22px; word-break: break-word; }
+  @keyframes aparece { from { opacity: 0; transform: scale(.7); } to { opacity: 1; transform: none; } }
+  #confeti { position: fixed; inset: 0; z-index: 21; pointer-events: none; display: none; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(20px);
+    background: #000c; color: #fff; padding: 10px 18px; border-radius: 999px;
+    opacity: 0; transition: .25s; z-index: 30; pointer-events: none;
+  }
+  .toast.ver { opacity: 1; transform: translateX(-50%); }
+
+  /* ----- Pantalla completa / proyector ----- */
+  body.pantalla-completa .app { grid-template-columns: 1fr; }
+  body.pantalla-completa aside .tarjeta:not(.tarjeta-qr) { display: none; }
+  body.pantalla-completa aside {
+    position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 170px;
+  }
+  body.pantalla-completa .tarjeta-qr { padding: 10px; }
+  body.pantalla-completa .tarjeta-qr .codigo { font-size: 1.2rem; }
+  body.pantalla-completa .tarjeta-qr .enlace,
+  body.pantalla-completa .tarjeta-qr h2 { display: none; }
+  body.pantalla-completa .ruleta-caja { width: min(100%, calc(100vh - 150px)); }
+
+  @media (max-width: 1020px) {
+    .app { grid-template-columns: 1fr; }
+    .ruleta-caja { width: min(100%, 640px); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>🎡 Ruleta <span>en vivo</span></h1>
+    <div class="barra">
+      <button class="btn" id="btnSonido" title="Activar o silenciar el sonido">🔊 Sonido</button>
+      <button class="btn" id="btnPantalla" title="Modo proyector">⛶ Pantalla completa</button>
+    </div>
+  </header>
+
+  <main class="escenario">
+    <div class="ruleta-caja" id="caja">
+      <div class="puntero"></div>
+      <canvas id="ruleta"></canvas>
+      <button class="btn-girar" id="btnGirar" disabled>GIRAR</button>
+    </div>
+    <div class="estado" id="estado">Preparando la sala…</div>
+    <div class="opciones">
+      <label><input type="checkbox" id="optQuitar"> Quitar al ganador de la ruleta</label>
+    </div>
+  </main>
+
+  <aside>
+    <section class="tarjeta tarjeta-qr">
+      <h2>Escaneá para unirte</h2>
+      <div class="qr-caja">
+        <div class="qr-marco"><div id="qr"></div></div>
+        <div class="codigo" id="codigo">·····</div>
+        <div class="enlace" id="enlace"></div>
+        <button class="btn" id="btnCopiar">📋 Copiar enlace</button>
+      </div>
+    </section>
+
+    <section class="tarjeta">
+      <div class="contador">
+        <h2 style="margin:0">Participantes</h2>
+        <strong id="contador">0</strong>
+      </div>
+      <ul class="lista" id="lista"></ul>
+      <div class="vacio" id="vacio">Todavía no se anotó nadie.<br>Mostrá el código QR 👆</div>
+      <div class="fila-btns">
+        <button class="btn" id="btnCerrar">🔒 Cerrar inscripción</button>
+        <button class="btn peligro" id="btnVaciar">🗑 Vaciar</button>
+      </div>
+    </section>
+
+    <section class="tarjeta" id="tarjetaHist" style="display:none">
+      <h2>Ganadores</h2>
+      <ol class="historial" id="historial"></ol>
+    </section>
+
+    <button class="btn peligro" id="btnNueva">↻ Crear una sala nueva</button>
+  </aside>
+</div>
+
+<div class="velo" id="velo">
+  <div class="ganador">
+    <small>¡Ganó!</small>
+    <div class="nombre" id="ganadorNombre"></div>
+    <button class="btn" id="btnContinuar">Continuar</button>
+  </div>
+</div>
+<canvas id="confeti"></canvas>
+<div class="toast" id="toast"></div>
+
+<script src="/vendor/qrcode.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  // ------------------------------------------------------------ Estado
+  const $ = (id) => document.getElementById(id);
+  const TAU = Math.PI * 2;
+  const PALETA = [
+    { fondo: "#ef476f", texto: "#ffffff" },
+    { fondo: "#ffd166", texto: "#2b2250" },
+    { fondo: "#06d6a0", texto: "#0b3b30" },
+    { fondo: "#118ab2", texto: "#ffffff" },
+    { fondo: "#8338ec", texto: "#ffffff" },
+    { fondo: "#ff9f1c", texto: "#3a2200" },
+    { fondo: "#3a86ff", texto: "#ffffff" },
+    { fondo: "#e5383b", texto: "#ffffff" },
+  ];
+
+  let sala = null, token = null;
+  let participantes = [];
+  let cerrada = false;
+  let rot = 0;
+  let girando = false;
+  let pendiente = null;      // actualización recibida mientras gira
+  let aQuitar = null;        // id del ganador a quitar al cerrar el cartel
+  let sonidoOn = true;
+  let firma = "";
+  const historial = [];
+  const vistos = new Set();
+
+  // ------------------------------------------------------------ Utilidades
+  function toast(msg) {
+    const t = $("toast");
+    t.textContent = msg;
+    t.classList.add("ver");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => t.classList.remove("ver"), 2200);
+  }
+
+  async function api(ruta, opciones = {}) {
+    const r = await fetch("/api/" + ruta, {
+      headers: { "content-type": "application/json" },
+      ...opciones,
+    });
+    const datos = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const e = new Error(datos.error || "Error de conexión");
+      e.status = r.status;
+      throw e;
+    }
+    return datos;
+  }
+  const post = (ruta, cuerpo) =>
+    api(ruta, { method: "POST", body: JSON.stringify(cuerpo) });
+
+  function aleatorio(n) {
+    const b = new Uint32Array(1);
+    crypto.getRandomValues(b);
+    return b[0] % n;
+  }
+
+  // ------------------------------------------------------------ Sonido
+  let audio = null;
+  function tick() {
+    if (!sonidoOn) return;
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = "triangle"; o.frequency.value = 900;
+      g.gain.setValueAtTime(0.0001, audio.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.18, audio.currentTime + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.06);
+      o.connect(g).connect(audio.destination);
+      o.start(); o.stop(audio.currentTime + 0.07);
+    } catch {}
+  }
+  function fanfarria() {
+    if (!sonidoOn) return;
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      [523, 659, 784, 1047].forEach((f, i) => {
+        const o = audio.createOscillator(), g = audio.createGain();
+        const t0 = audio.currentTime + i * 0.13;
+        o.type = "square"; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.12, t0 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.25);
+        o.connect(g).connect(audio.destination);
+        o.start(t0); o.stop(t0 + 0.28);
+      });
+    } catch {}
+  }
+
+  // ------------------------------------------------------------ Dibujo de la ruleta
+  const canvas = $("ruleta");
+  const ctx = canvas.getContext("2d");
+  let lado = 600;
+
+  function ajustarCanvas() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    lado = canvas.clientWidth || 600;
+    canvas.width = Math.round(lado * dpr);
+    canvas.height = Math.round(lado * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dibujar();
+  }
+
+  function colorDe(i, n) {
+    let k = i % PALETA.length;
+    // evitar que el último segmento repita el color del primero
+    if (n > 1 && i === n - 1 && k === 0) k = 4;
+    if (n > 1 && i === n - 1 && k === ((n - 2) % PALETA.length)) k = (k + 3) % PALETA.length;
+    return PALETA[k];
+  }
+
+  function ajustarTexto(texto, tam, anchoMax) {
+    ctx.font = `700 ${tam}px "Segoe UI", system-ui, sans-serif`;
+    while (ctx.measureText(texto).width > anchoMax && tam > 9) {
+      tam -= 1;
+      ctx.font = `700 ${tam}px "Segoe UI", system-ui, sans-serif`;
+    }
+    if (ctx.measureText(texto).width > anchoMax) {
+      while (texto.length > 1 && ctx.measureText(texto + "…").width > anchoMax) texto = texto.slice(0, -1);
+      texto += "…";
+    }
+    return texto;
+  }
+
+  function dibujar() {
+    const c = lado / 2;
+    const r = c - 10;
+    ctx.clearRect(0, 0, lado, lado);
+
+    // aro exterior
+    ctx.beginPath();
+    ctx.arc(c, c, r + 6, 0, TAU);
+    ctx.fillStyle = "#ffd166";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(c, c, r + 1, 0, TAU);
+    ctx.fillStyle = "#1a1d40";
+    ctx.fill();
+
+    const n = participantes.length;
+    if (n === 0) {
+      ctx.beginPath();
+      ctx.arc(c, c, r - 4, 0, TAU);
+      ctx.fillStyle = "#262b5c";
+      ctx.fill();
+      ctx.fillStyle = "#a9aed6";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `600 ${lado * 0.04}px "Segoe UI", system-ui, sans-serif`;
+      ctx.fillText("Esperando participantes…", c, c - lado * 0.17);
+      ctx.font = `${lado * 0.032}px "Segoe UI", system-ui, sans-serif`;
+      ctx.fillText("Escaneá el QR para anotarte", c, c + lado * 0.2);
+      return;
+    }
+
+    const a = TAU / n;
+    for (let i = 0; i < n; i++) {
+      const ini = rot - Math.PI / 2 + i * a;
+      const col = colorDe(i, n);
+      ctx.beginPath();
+      ctx.moveTo(c, c);
+      ctx.arc(c, c, r - 4, ini, ini + a);
+      ctx.closePath();
+      ctx.fillStyle = col.fondo;
+      ctx.fill();
+      if (n > 1) {
+        ctx.strokeStyle = "rgba(255,255,255,.55)";
+        ctx.lineWidth = n > 60 ? 0.5 : 1.5;
+        ctx.stroke();
+      }
+    }
+
+    // nombres
+    const largoArco = a * (r * 0.62);
+    let tam = Math.min(lado * 0.045, largoArco * 0.62);
+    if (n === 1) tam = lado * 0.05;
+    if (tam >= 7) {
+      for (let i = 0; i < n; i++) {
+        const col = colorDe(i, n);
+        const medio = rot - Math.PI / 2 + (i + 0.5) * a;
+        ctx.save();
+        ctx.translate(c, c);
+        ctx.rotate(medio);
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = col.texto;
+        const anchoMax = r * 0.62;
+        const t = ajustarTexto(participantes[i].nombre, tam, anchoMax);
+        ctx.fillText(t, r - 22, 0);
+        ctx.restore();
+      }
+    }
+
+    // centro
+    ctx.beginPath();
+    ctx.arc(c, c, lado * 0.115, 0, TAU);
+    ctx.fillStyle = "#1a1d40";
+    ctx.fill();
+  }
+
+  // ------------------------------------------------------------ Giro
+  function girar() {
+    const n = participantes.length;
+    if (girando || n < 1) return;
+    if (audio && audio.state === "suspended") audio.resume();
+    girando = true;
+    aQuitar = null;
+    actualizarControles();
+    $("estado").textContent = "¡Girando…!";
+
+    const idx = aleatorio(n);
+    const a = TAU / n;
+    const holgura = n === 1 ? 0 : (Math.random() - 0.5) * a * 0.7;
+    const deseado = -(idx + 0.5) * a + holgura;
+    const actual = ((rot % TAU) + TAU) % TAU;
+    const delta = (((deseado - actual) % TAU) + TAU) % TAU;
+    const vueltas = 6 + aleatorio(3);
+    const total = vueltas * TAU + delta;
+    const inicio = rot;
+    const duracion = 6500 + aleatorio(1500);
+    const t0 = performance.now();
+    let ultimoSeg = Math.floor(((-inicio % TAU) + TAU) / a);
+
+    function paso(ahora) {
+      const t = Math.min(1, (ahora - t0) / duracion);
+      const ease = 1 - Math.pow(1 - t, 4);
+      rot = inicio + total * ease;
+      const seg = Math.floor((((-rot % TAU) + TAU) % TAU) / a);
+      if (seg !== ultimoSeg) { ultimoSeg = seg; tick(); }
+      dibujar();
+      if (t < 1) {
+        requestAnimationFrame(paso);
+      } else {
+        girando = false;
+        mostrarGanador(idx);
+      }
+    }
+    requestAnimationFrame(paso);
+  }
+
+  function mostrarGanador(idx) {
+    const g = participantes[idx];
+    $("estado").textContent = "";
+    $("ganadorNombre").textContent = g.nombre;
+    $("velo").classList.add("abierto");
+    historial.push(g.nombre);
+    renderHistorial();
+    if ($("optQuitar").checked) aQuitar = g.id;
+    fanfarria();
+    lanzarConfeti();
+  }
+
+  async function cerrarGanador() {
+    $("velo").classList.remove("abierto");
+    detenerConfeti();
+    if (aQuitar) {
+      const id = aQuitar;
+      aQuitar = null;
+      try { await post("quitar", { sala, token, id }); } catch (e) { toast(e.message); }
+      await refrescar(true);
+    }
+    aplicarPendiente();
+    actualizarControles();
+  }
+
+  function renderHistorial() {
+    $("tarjetaHist").style.display = historial.length ? "" : "none";
+    const ol = $("historial");
+    ol.innerHTML = "";
+    historial.forEach((n) => {
+      const li = document.createElement("li");
+      li.textContent = n;
+      ol.appendChild(li);
+    });
+  }
+
+  // ------------------------------------------------------------ Confeti
+  const cf = $("confeti");
+  const cfx = cf.getContext("2d");
+  let piezas = [], cfAnim = null;
+  function lanzarConfeti() {
+    cf.width = innerWidth; cf.height = innerHeight;
+    cf.style.display = "block";
+    piezas = Array.from({ length: 160 }, () => ({
+      x: Math.random() * cf.width,
+      y: -20 - Math.random() * cf.height * 0.6,
+      w: 6 + Math.random() * 8, h: 8 + Math.random() * 10,
+      vy: 2.5 + Math.random() * 4, vx: -1.5 + Math.random() * 3,
+      rot: Math.random() * TAU, vr: -0.2 + Math.random() * 0.4,
+      color: PALETA[aleatorio(PALETA.length)].fondo,
+    }));
+    cancelAnimationFrame(cfAnim);
+    (function loop() {
+      cfx.clearRect(0, 0, cf.width, cf.height);
+      piezas.forEach((p) => {
+        p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+        if (p.y > cf.height + 20) { p.y = -20; p.x = Math.random() * cf.width; }
+        cfx.save();
+        cfx.translate(p.x, p.y); cfx.rotate(p.rot);
+        cfx.fillStyle = p.color;
+        cfx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        cfx.restore();
+      });
+      cfAnim = requestAnimationFrame(loop);
+    })();
+  }
+  function detenerConfeti() {
+    cancelAnimationFrame(cfAnim);
+    cf.style.display = "none";
+  }
+
+  // ------------------------------------------------------------ Panel
+  function actualizarControles() {
+    $("btnGirar").disabled = girando || participantes.length < 1;
+    $("contador").textContent = participantes.length;
+    $("btnCerrar").textContent = cerrada ? "🔓 Reabrir inscripción" : "🔒 Cerrar inscripción";
+    $("btnCerrar").classList.toggle("activo", cerrada);
+    if (!girando && !$("velo").classList.contains("abierto")) {
+      $("estado").textContent = cerrada
+        ? "Inscripción cerrada"
+        : participantes.length === 0
+          ? "Esperando que alguien escanee el QR…"
+          : participantes.length === 1
+            ? "Hay 1 participante. ¡Girá cuando quieras!"
+            : `${participantes.length} participantes anotados. ¡Girá cuando quieras!`;
+    }
+  }
+
+  function renderLista() {
+    const ul = $("lista");
+    ul.innerHTML = "";
+    participantes.forEach((p) => {
+      const li = document.createElement("li");
+      if (!vistos.has(p.id)) { li.className = "nuevo"; vistos.add(p.id); }
+      const s = document.createElement("span");
+      s.textContent = p.nombre;
+      const x = document.createElement("button");
+      x.className = "x"; x.title = "Quitar"; x.textContent = "×";
+      x.addEventListener("click", () => quitar(p.id));
+      li.append(s, x);
+      ul.appendChild(li);
+    });
+    $("vacio").style.display = participantes.length ? "none" : "";
+  }
+
+  async function quitar(id) {
+    if (girando) return;
+    try {
+      await post("quitar", { sala, token, id });
+      await refrescar(true);
+    } catch (e) { toast(e.message); }
+  }
+
+  function aplicarDatos(d) {
+    participantes = d.participantes;
+    cerrada = d.cerrada;
+    renderLista();
+    dibujar();
+    actualizarControles();
+  }
+  function aplicarPendiente() {
+    if (pendiente) { const d = pendiente; pendiente = null; aplicarDatos(d); }
+  }
+
+  async function refrescar(forzar = false) {
+    if (!sala) return;
+    try {
+      const d = await api("participantes?sala=" + sala);
+      const f = d.cerrada + "|" + d.participantes.map((p) => p.id).join(",");
+      if (!forzar && f === firma) return;
+      firma = f;
+      if (girando || $("velo").classList.contains("abierto")) { pendiente = d; return; }
+      aplicarDatos(d);
+    } catch (e) {
+      if (e.status === 404) { await nuevaSala(true); }
+    }
+  }
+
+  // ------------------------------------------------------------ Sala y QR
+  function urlUnirse() {
+    return `${location.origin}/unirse.html?sala=${sala}`;
+  }
+
+  function pintarQR() {
+    const url = urlUnirse();
+    $("codigo").textContent = sala;
+    $("enlace").textContent = url;
+    const cont = $("qr");
+    cont.innerHTML = "";
+    if (window.qrcode) {
+      const qr = qrcode(0, "M");
+      qr.addData(url);
+      qr.make();
+      cont.innerHTML = qr.createSvgTag({ cellSize: 8, margin: 0, scalable: true });
+      const svg = cont.querySelector("svg");
+      if (svg) { svg.style.width = "100%"; svg.style.height = "auto"; svg.style.display = "block"; }
+    } else {
+      cont.textContent = "No se pudo cargar el QR. Compartí el enlace de abajo.";
+      cont.style.cssText = "line-height:1.3;color:#0f1226;padding:20px;font-size:.9rem";
+    }
+  }
+
+  async function nuevaSala(silencioso = false) {
+    if (!silencioso && !confirm("Se crea una sala nueva y se pierde la lista actual. ¿Seguir?")) return;
+    try {
+      const d = await post("sala", {});
+      sala = d.sala; token = d.token;
+      localStorage.setItem("ruleta_sala", JSON.stringify({ sala, token }));
+      firma = ""; participantes = []; cerrada = false; pendiente = null;
+      historial.length = 0; renderHistorial();
+      pintarQR(); renderLista(); dibujar(); actualizarControles();
+      if (!silencioso) toast("Sala nueva creada");
+    } catch (e) {
+      $("estado").textContent = "No se pudo crear la sala: " + e.message;
+    }
+  }
+
+  async function iniciar() {
+    ajustarCanvas();
+    let guardada = null;
+    try { guardada = JSON.parse(localStorage.getItem("ruleta_sala") || "null"); } catch {}
+    if (guardada && guardada.sala && guardada.token) {
+      try {
+        const d = await api("participantes?sala=" + guardada.sala);
+        sala = guardada.sala; token = guardada.token;
+        pintarQR();
+        firma = d.cerrada + "|" + d.participantes.map((p) => p.id).join(",");
+        aplicarDatos(d);
+      } catch { guardada = null; }
+    }
+    if (!sala) await nuevaSala(true);
+    setInterval(() => { if (!document.hidden) refrescar(); }, 2500);
+  }
+
+  // ------------------------------------------------------------ Eventos
+  $("btnGirar").addEventListener("click", girar);
+  $("btnContinuar").addEventListener("click", cerrarGanador);
+  $("btnNueva").addEventListener("click", () => nuevaSala(false));
+  $("btnCopiar").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(urlUnirse()); toast("Enlace copiado"); }
+    catch { toast(urlUnirse()); }
+  });
+  $("btnCerrar").addEventListener("click", async () => {
+    try {
+      const d = await post("cerrar", { sala, token, cerrada: !cerrada });
+      cerrada = d.cerrada; firma = ""; actualizarControles();
+      toast(cerrada ? "Inscripción cerrada" : "Inscripción abierta");
+    } catch (e) { toast(e.message); }
+  });
+  $("btnVaciar").addEventListener("click", async () => {
+    if (girando || !participantes.length) return;
+    if (!confirm("¿Quitar a todos los participantes de la ruleta?")) return;
+    try { await post("vaciar", { sala, token }); await refrescar(true); }
+    catch (e) { toast(e.message); }
+  });
+  $("btnSonido").addEventListener("click", () => {
+    sonidoOn = !sonidoOn;
+    $("btnSonido").textContent = sonidoOn ? "🔊 Sonido" : "🔇 Silencio";
+  });
+  $("btnPantalla").addEventListener("click", async () => {
+    const activo = document.body.classList.toggle("pantalla-completa");
+    try {
+      if (activo && !document.fullscreenElement) await document.documentElement.requestFullscreen();
+      if (!activo && document.fullscreenElement) await document.exitFullscreen();
+    } catch {}
+    setTimeout(ajustarCanvas, 80);
+  });
+  document.addEventListener("fullscreenchange", () => {
+    if (!document.fullscreenElement) document.body.classList.remove("pantalla-completa");
+    setTimeout(ajustarCanvas, 80);
+  });
+  addEventListener("resize", () => {
+    clearTimeout(ajustarCanvas._t);
+    ajustarCanvas._t = setTimeout(ajustarCanvas, 100);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.code === "Space" && !e.target.matches("input,textarea,button")) {
+      e.preventDefault();
+      if ($("velo").classList.contains("abierto")) cerrarGanador(); else girar();
+    }
+  });
+
+  iniciar();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sumate a la ruleta</title>
+<meta name="theme-color" content="#0f1226">
+<style>
+  :root { --fondo:#0f1226; --panel:#1d2245; --borde:#2e3566; --texto:#f4f5ff; --suave:#a9aed6; --oro:#ffd166; --coral:#ef476f; --verde:#06d6a0; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 20px;
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; color: var(--texto);
+    background:
+      radial-gradient(900px 600px at 20% -10%, #2a2f6b 0%, transparent 60%),
+      radial-gradient(700px 500px at 110% 110%, #4a1d5c 0%, transparent 55%),
+      var(--fondo);
+  }
+  .tarjeta {
+    width: 100%; max-width: 420px; text-align: center;
+    background: color-mix(in srgb, var(--panel) 94%, transparent);
+    border: 1px solid var(--borde); border-radius: 24px; padding: 30px 24px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.45);
+  }
+  .rueda { font-size: 3.4rem; display: inline-block; animation: gira 6s linear infinite; }
+  @keyframes gira { to { transform: rotate(360deg); } }
+  h1 { margin: 8px 0 4px; font-size: 1.6rem; }
+  p { color: var(--suave); margin: 0 0 20px; }
+  .sala { color: var(--oro); font-weight: 800; letter-spacing: .2em; }
+  label { display: block; text-align: left; font-weight: 600; margin-bottom: 8px; }
+  input {
+    width: 100%; font: inherit; font-size: 1.15rem; padding: 14px 16px; border-radius: 14px;
+    border: 2px solid var(--borde); background: #12163a; color: var(--texto); outline: none;
+  }
+  input:focus { border-color: var(--oro); }
+  button {
+    width: 100%; margin-top: 14px; font: inherit; font-size: 1.1rem; font-weight: 800; letter-spacing: .04em;
+    padding: 15px; border: 0; border-radius: 14px; cursor: pointer; color: #fff;
+    background: linear-gradient(135deg, #ff6b8b, var(--coral));
+    box-shadow: 0 8px 20px rgba(239,71,111,.35);
+  }
+  button:disabled { filter: grayscale(.8) brightness(.8); cursor: wait; }
+  button.sec { background: transparent; border: 2px solid var(--borde); box-shadow: none; color: var(--texto); font-size: 1rem; }
+  .error { color: #ff9db3; margin-top: 14px; min-height: 1.3em; }
+  .ok .check { font-size: 4rem; }
+  .ok h1 { color: var(--verde); }
+  .nombre { color: var(--oro); font-weight: 800; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="tarjeta">
+  <!-- Formulario -->
+  <div id="vistaForm">
+    <div class="rueda">🎡</div>
+    <h1>¡Sumate a la ruleta!</h1>
+    <p>Sala <span class="sala" id="codigoSala">·····</span></p>
+    <form id="form" autocomplete="off">
+      <label for="nombre">Tu nombre</label>
+      <input id="nombre" name="nombre" maxlength="24" placeholder="Ej: María" required autofocus enterkeyhint="send">
+      <button id="btn" type="submit">ANOTARME</button>
+      <div class="error" id="error" role="alert"></div>
+    </form>
+  </div>
+
+  <!-- Confirmación -->
+  <div id="vistaOk" class="ok" hidden>
+    <div class="check">✅</div>
+    <h1>¡Listo, estás anotado!</h1>
+    <p>Quedaste en la ruleta como <span class="nombre" id="nombreOk"></span>.<br>Mirá la pantalla grande y mucha suerte 🍀</p>
+    <button class="sec" id="btnOtro">Anotar a otra persona</button>
+  </div>
+
+  <!-- Sala inválida / cerrada -->
+  <div id="vistaMal" hidden>
+    <div class="check" style="font-size:3.4rem">😕</div>
+    <h1 id="malTitulo">No se pudo abrir la sala</h1>
+    <p id="malTexto"></p>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const params = new URLSearchParams(location.search);
+  const sala = (params.get("sala") || "").trim().toUpperCase();
+  $("codigoSala").textContent = sala || "·····";
+  const claveLocal = "ruleta_unido_" + sala;
+
+  function mostrar(vista) {
+    ["vistaForm", "vistaOk", "vistaMal"].forEach((v) => ($(v).hidden = v !== vista));
+  }
+  function mal(titulo, texto) {
+    $("malTitulo").textContent = titulo;
+    $("malTexto").textContent = texto;
+    mostrar("vistaMal");
+  }
+
+  async function verificar() {
+    if (!/^[A-Z0-9]{4,8}$/.test(sala)) {
+      return mal("Enlace inválido", "Escaneá de nuevo el código QR que aparece en la pantalla.");
+    }
+    try {
+      const r = await fetch("/api/participantes?sala=" + encodeURIComponent(sala), { cache: "no-store" });
+      const d = await r.json().catch(() => ({}));
+      if (r.status === 404) return mal("Esa sala ya no existe", "Pedile al organizador que te muestre el QR actualizado.");
+      if (!r.ok) return mal("Sin conexión", d.error || "Probá de nuevo en unos segundos.");
+      if (d.cerrada) return mal("Inscripción cerrada", "El organizador ya cerró la lista de participantes.");
+    } catch {
+      return mal("Sin conexión", "Revisá tu internet y volvé a escanear el código.");
+    }
+    // ¿ya se anotó desde este teléfono?
+    try {
+      const previo = localStorage.getItem(claveLocal);
+      if (previo) { $("nombreOk").textContent = previo; mostrar("vistaOk"); return; }
+    } catch {}
+    mostrar("vistaForm");
+    $("nombre").focus();
+  }
+
+  $("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const nombre = $("nombre").value.trim();
+    if (!nombre) return;
+    $("error").textContent = "";
+    $("btn").disabled = true;
+    $("btn").textContent = "Anotando…";
+    try {
+      const r = await fetch("/api/unirse", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sala, nombre }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "No se pudo anotar, probá de nuevo");
+      try { localStorage.setItem(claveLocal, d.nombre); } catch {}
+      $("nombreOk").textContent = d.nombre;
+      mostrar("vistaOk");
+    } catch (err) {
+      $("error").textContent = err.message;
+    } finally {
+      $("btn").disabled = false;
+      $("btn").textContent = "ANOTARME";
+    }
+  });
+
+  $("btnOtro").addEventListener("click", () => {
+    try { localStorage.removeItem(claveLocal); } catch {}
+    $("nombre").value = "";
+    mostrar("vistaForm");
+    $("nombre").focus();
+  });
+
+  verificar();
+})();
+</script>
+</body>
+</html>
